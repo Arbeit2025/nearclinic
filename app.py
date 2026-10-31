@@ -29,7 +29,13 @@ app = Flask(__name__)
 
 USER_AGENT = "nearclinic/1.0 (+https://github.com/Arbeit2025/nearclinic)"
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
-OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+# Overpass API は本家（overpass-api.de）が混雑やクラウドIP制限で
+# 応答しない／極端に遅いことがあるため、ミラーも含めて順に試す。
+OVERPASS_URLS = (
+    "https://overpass.openstreetmap.fr/api/interpreter",
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+)
 
 RADIUS_CHOICES_KM = (1, 2, 3, 5)
 DEFAULT_RADIUS_KM = 2
@@ -144,10 +150,23 @@ def build_overpass_query(lat, lon, radius_m):
 
 
 def fetch_places(lat, lon, radius_km):
-    """Overpass API で医療機関を検索し、距離順の一覧を返す。"""
+    """Overpass API で医療機関を検索し、距離順の一覧を返す。
+
+    複数の Overpass エンドポイントを順に試し、最初に成功した結果を使う。
+    すべて失敗したら最後の SearchError を投げる。
+    """
     radius_m = int(radius_km * 1000)
-    data = _request_json(OVERPASS_URL, data=build_overpass_query(lat, lon, radius_m), timeout=35)
-    return parse_places(data, lat, lon)
+    query = build_overpass_query(lat, lon, radius_m)
+    last_error = None
+    for url in OVERPASS_URLS:
+        try:
+            data = _request_json(url, data=query, timeout=20)
+            return parse_places(data, lat, lon)
+        except SearchError as exc:
+            last_error = exc
+    if last_error is not None:
+        raise last_error
+    raise SearchError("検索サービスに接続できませんでした。時間をおいてもう一度お試しください。")
 
 
 # ============================

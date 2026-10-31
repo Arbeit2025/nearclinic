@@ -206,6 +206,23 @@ class TestRoutes(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)  # 500 にしない
         self.assertIn("接続できませんでした", body)
 
+    def test_overpass_fallback_to_second_endpoint(self):
+        """最初の Overpass が失敗しても、次のエンドポイントで検索できる。"""
+        base = fake_urlopen_factory()
+
+        def flaky(req, timeout=None):
+            url = req.full_url if hasattr(req, "full_url") else str(req)
+            if "openstreetmap.fr" in url:
+                raise urllib.error.URLError("primary down")
+            return base(req, timeout=timeout)
+
+        with mock.patch.object(app_module.urllib.request, "urlopen", side_effect=flaky):
+            resp = self.client.get("/?q=八王子駅&radius=2")
+        body = resp.get_data(as_text=True)
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("テストクリニック", body)
+        self.assertIn("3件", body)
+
     def test_invalid_radius_falls_back(self):
         with mock.patch.object(
             app_module.urllib.request, "urlopen", side_effect=fake_urlopen_factory()
