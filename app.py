@@ -203,7 +203,17 @@ def parse_places(data, origin_lat, origin_lon):
             }
         )
     places.sort(key=lambda p: p["distance_m"])
-    return places[:MAX_RESULTS]
+    # OSM 側で同一施設が二重登録されている場合があるため、
+    # 同名で距離が 100m 以内のものは近い方だけを残す。
+    deduped = []
+    for p in places:
+        if any(
+            k["name"] == p["name"] and abs(k["distance_m"] - p["distance_m"]) < 100
+            for k in deduped
+        ):
+            continue
+        deduped.append(p)
+    return deduped[:MAX_RESULTS]
 
 
 # ============================

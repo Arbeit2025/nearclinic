@@ -141,6 +141,33 @@ class TestParsePlaces(unittest.TestCase):
     def test_parse_empty(self):
         self.assertEqual(app_module.parse_places({"elements": []}, 35.0, 139.0), [])
 
+    def test_parse_dedupes_same_name_within_100m(self):
+        # OSM の二重登録を模したデータ：同名で距離差100m未満は近い方だけ残す
+        def el(name, lat):
+            return {
+                "type": "node",
+                "lat": lat,
+                "lon": 139.338889,
+                "tags": {"amenity": "clinic", "name": name},
+            }
+
+        origin_lat = 35.655833
+        data = {
+            "elements": [
+                el("重複クリニック", origin_lat + 0.001),   # 約111m
+                el("重複クリニック", origin_lat + 0.0015),  # 約167m（差56m → 除外）
+                el("別クリニック", origin_lat + 0.0012),    # 約133m（別名 → 残す）
+                el("重複クリニック", origin_lat + 0.005),   # 約556m（差445m → 残す）
+            ]
+        }
+        places = app_module.parse_places(data, origin_lat, 139.338889)
+        self.assertEqual(
+            [p["name"] for p in places],
+            ["重複クリニック", "別クリニック", "重複クリニック"],
+        )
+        # 残った重複クリニックの先頭は近い方（約111m）
+        self.assertTrue(100 < places[0]["distance_m"] < 125)
+
     def test_overpass_query_includes_radius_and_amenities(self):
         q = app_module.build_overpass_query(35.6, 139.3, 3000)
         self.assertIn("around:3000,35.6,139.3", q)
